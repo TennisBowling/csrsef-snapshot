@@ -1,0 +1,16 @@
+/target
+section2/ast_processor/target/
+
+.venv/
+ai_generated*
+filtered*
+training/__pycache__
+
+qwen2.5-coder-14b-instruct-q5_k_m.gguf
+__pycache__/
+__pycache__/
+#section2/*.parquet
+#section2/ast_processor/target/
+#*.sqlite
+#*.pt
+#*.parquet

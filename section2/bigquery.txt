@@ -1,0 +1,20 @@
+CREATE TABLE `github_enzodataset.github_dump2` AS
+WITH distinct_files AS (
+  SELECT f.id, f.repo_name, f.path
+  FROM `bigquery-public-data.github_repos.files` f
+  WHERE f.path LIKE '%.py'
+  
+),
+sampled_contents AS (
+  SELECT c.id, c.content
+  FROM `bigquery-public-data.github_repos.contents` c
+  TABLESAMPLE SYSTEM (25 PERCENT)
+  WHERE NOT c.binary
+  AND c.size BETWEEN 1024 AND 10000000  -- 1KB minimum, 10MB maximum
+)
+SELECT DISTINCT
+  CONCAT(f.repo_name, '/', f.path) as full_path,
+  c.content as code
+FROM distinct_files f
+JOIN sampled_contents c
+ON f.id = c.id;

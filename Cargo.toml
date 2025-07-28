@@ -1,0 +1,63 @@
+[package]
+name = "csrsef"
+version = "0.1.0"
+edition = "2021"
+
+
+
+[dependencies]
+tokio = { version = "1.0", features = ["full"] }
+polars = { version = "0.46.0", features = ["parquet", "lazy", "streaming", "strings", "sql", 'async'] }
+regex = "1.0"
+rayon = "1.8"
+anyhow = "1.0"
+rustpython-parser = { version = "0.4.0", features = ["serde"] }
+#pyo3 = { version = "0.23.3", features = ["pyo3-macros", "extension-module"] }
+serde = "1.0.216"
+serde_json = "1.0.133"
+arrow = "54.0.0"
+parquet = { version = "54.0.0", features = ["async", "arrow"] }
+futures = "0.3.31"
+axum = { version = "0.8.1", features = ["ws"] }
+hyper = { version = "0.14", features = ["full"] }
+async-trait = "0.1"
+tracing-subscriber = { version = "0.3.19", features = ["std", "env-filter"] }
+tracing = "0.1.41"
+chrono = {version = "0.4.39", features = ["serde"] }
+uuid = { version = "1.11.0", features = ["v4"] }
+sqlx = {version = "0.8.2", features = ["sqlite", "postgres", "runtime-tokio"] }
+sha256 = "1.5.0"
+rusqlite = "0.32.1"
+glob = "0.3.2"
+sha2 = "0.10.8"
+hex = "0.4.3"
+tower-http = { version = "0.6.2", features = ["cors"] }
+tree-sitter = "0.24.6"
+tree-sitter-python = "0.23.6"
+strsim = "0.11.1"
+indicatif = "0.17.9"
+stringzilla = "3.11.3"
+log = "0.4.22"
+env_logger = "0.11.6"
+plotters = "0.3.7"
+dashmap = "6.1.0"
+num_cpus = "1.16.0"
+rand = "0.8.5"
+scopeguard = "1.2.0"
+bitcode = { version = "0.6.4", features = ["serde"] }
+reqwest = { version = "0.12.12", features = ["json", "multipart"] }
+base64ct = { version = "1.6.0", features = ["alloc"] }
+ast_processor = { path = "/Users/enzovt/Documents/github/csrsef/section2/ast_processor" }
+tokio-util = { version = "0.7.13", features = ["rt"] }
+clap = "2.33.3"
+qdrant-client = "1.13.0"
+ctrlc = "3.4.5"
+
+
+
+[profile.highperf]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+incremental = false
+

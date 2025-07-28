@@ -1,0 +1,158 @@
+import asyncio
+import websockets
+import json
+import logging
+import colorlog
+import signal
+from typing import List, Dict, Optional
+from openai import AsyncAzureOpenAI
+import regex as re
+import ast
+
+handler = colorlog.StreamHandler()
+handler.setFormatter(colorlog.ColoredFormatter(
+    '%(log_color)s%(levelname)-8s%(reset)s %(blue)s%(message)s',
+    log_colors={
+        'DEBUG':    'cyan',
+        'INFO':     'green',
+        'WARNING':  'yellow',
+        'ERROR':    'red',
+        'CRITICAL': 'red,bg_white',
+    }
+))
+
+logger = colorlog.getLogger('llmclient')
+logger.addHandler(handler)
+logger.setLevel(logging.INFO)
+
+
+class LLMClient:
+    def __init__(self):
+        self.api_key = ""
+        self.model_name = "gpt-4o-mini"
+        self.client = AsyncAzureOpenAI(api_key=self.api_key, azure_endpoint="https://csrsef.openai.azure.com/", api_version="2024-05-01-preview", timeout=300)
+        self.websocket: Optional[websockets.WebSocketClientProtocol] = None
+        self.stopping = False
+        self.lock = asyncio.Lock()
+        self.workers = 0
+    
+    def extract_code(self, text: str) -> Optional[str]:
+        pattern = r"```python\n(.*?)```"
+        matches = re.findall(pattern, text, re.DOTALL)
+        if matches:
+            return matches[0].strip()
+            
+        pattern = r"```\n?(.*?)```"
+        matches = re.findall(pattern, text, re.DOTALL)
+        if matches:
+            return matches[0].strip()
+            
+        return None
+
+    def validate_code(self, code: str) -> bool:
+        try:
+            ast.parse(code)
+            return True
+        except (SyntaxError, Exception):
+            return False
+        
+    async def send_req(self, code: str) -> str | None:
+        prompt = f"""Rewrite this Python code without changing its functionality:
+
+{code}"""
+
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": "You are a Python code rewriter. Slightly rewrite the provided code without changing its functionality. Only return the rewritten code, no explanations."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+            )
+
+            logger.info(f"Prompt was {response.usage.prompt_tokens} tok and resp {response.usage.completion_tokens}")
+
+            if not response.choices[0].message.content:
+                logger.warning("Model didn't return anything")
+                return None
+
+            code = self.extract_code(response.choices[0].message.content) or response.choices[0].message.content
+            if not self.validate_code(code):
+                logger.warning("Not able to extract valid python from model")
+                return None
+            
+            return response.choices[0].message.content
+        
+        except Exception as e:
+            logger.error(f"Error processing: {str(e)}")
+            return None
+        
+    async def do_work(self):
+        self.workers += 1
+        logger.info("Creating worker!")
+        async with self.lock:
+            await self.websocket.send(json.dumps({"command": "get_work"}))
+            job = json.loads(await self.websocket.recv())
+        
+        if job["command"] == "process_batch":
+            batch_id = job["batch_id"]
+            code = job["data"][0]["code"]
+            full_path = job["data"][0]["full_path"]
+
+            response = await self.send_req(code)
+            if not response:
+                async with self.lock:
+                    await self.websocket.send(json.dumps({
+                        "command": "no_return",
+                        "batch_id": batch_id,
+                    }))
+                self.workers -= 1
+                return
+                
+            result = {
+                'code': code,
+                'full_path': full_path,
+                'analysis': response,
+                'success': True
+            }
+
+            async with self.lock:
+                await self.websocket.send(json.dumps({
+                    "command": "submit_results",
+                    "batch_id": batch_id,
+                    "results": [result],
+                    "model": self.model_name
+                }))
+
+                await self.websocket.send(json.dumps({"command": "status"}))
+                logger.info(await self.websocket.recv())
+                self.workers -= 1
+
+        elif job["command"] == "no_work":
+            await asyncio.sleep(3)
+            self.workers -= 1
+            return
+
+    def shutdown(self):
+        logger.info("Shutting down")
+        self.stopping = True
+
+    async def run(self):
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            asyncio.get_running_loop().add_signal_handler(sig, self.shutdown)
+
+        async with websockets.connect("ws://192.168.1.10:8765", ping_interval=10, ping_timeout=600, close_timeout=60, max_size=100 * 1024 * 1024) as websocket:
+            self.websocket = websocket
+            while not self.stopping:
+                asyncio.create_task(self.do_work())
+                await asyncio.sleep(0.3)
+            
+            logger.info("Waiting for workers to finish")
+            while self.workers != 0:
+                await asyncio.sleep(2)
+
+            logger.info("Done")
+
+client = LLMClient()
+asyncio.run(client.run())
